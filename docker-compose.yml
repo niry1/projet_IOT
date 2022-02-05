@@ -25,7 +25,7 @@ services:
       retries: 6 
   
   elastic_init:
-    build: ./elasticsearch
+    build: ./batch/elasticsearch
     container_name: elastic_init
     networks:
       - hdfs_spark_elas
@@ -58,8 +58,8 @@ services:
     networks:
       - hdfs_spark_elas
     volumes:
-      - ./shared-workspace:/opt/workspace
-      - ./hdfs:/hdfs
+      - ./batch/shared-workspace:/opt/workspace
+      - ./batch/hdfs:/hdfs
     environment:
       - SPARK_MODE=master
     command: bash -c "/opt/bitnami/scripts/spark/run.sh && spark-submit --driver-memory 4g --jars /opt/workspace/elasticsearch-spark-20_2.11-7.6.2.jar /opt/workspace/etl.py"
@@ -80,8 +80,8 @@ services:
     networks:
       - hdfs_spark_elas
     volumes:
-      - ./shared-workspace:/opt/workspace
-      - ./hdfs:/hdfs
+      - ./batch/shared-workspace:/opt/workspace
+      - ./batch/hdfs:/hdfs
     depends_on:
       elasticsearch: 
         condition: service_healthy
@@ -92,17 +92,59 @@ services:
     networks:
       - hdfs_spark_elas
     volumes:
-      - ./shared-workspace:/opt/workspace
-      - ./hdfs:/hdfs
+      - ./batch/shared-workspace:/opt/workspace
+      - ./batch/hdfs:/hdfs
     command: spark-submit --driver-memory 4g --jars /opt/workspace/elasticsearch-spark-20_2.11-7.6.2.jar /opt/workspace/etl.py
     depends_on:
       - elasticsearch
       - spark-master
       - spark-worker-1
 
+  zookeeper:
+    image: docker.io/bitnami/zookeeper:3.7
+    container_name: zookeeper
+    ports:
+      - "2181:2181"
+    volumes:
+      - "zookeeper_data:/bitnami"
+    environment:
+      - ALLOW_ANONYMOUS_LOGIN=yes
+    networks:
+      - hdfs_spark_elas
+
+  kafka:
+    image: docker.io/bitnami/kafka:3
+    container_name: kafka
+    ports:
+      - "9092:9092"
+    volumes:
+      - "kafka_data:/bitnami"
+    environment:
+      - KAFKA_CFG_ZOOKEEPER_CONNECT=zookeeper:2181
+      - ALLOW_PLAINTEXT_LISTENER=yes
+      - KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE=true
+    depends_on:
+      - zookeeper
+    networks:
+      - hdfs_spark_elas
+
+  csv_to_kafka:
+    build: ./stream/csv_to_kafka
+    container_name: csv_to_kafka
+    networks: 
+      - hdfs_spark_elas
+    depends_on:
+      - kafka
+
 volumes:
   data01:
     name: "data01"
+    driver: local
+  zookeeper_data:
+    name : "zookeeper_data"
+    driver: local
+  kafka_data:
+    name : "kafka_data"
     driver: local
 
 networks:
