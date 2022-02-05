@@ -85,7 +85,21 @@ services:
     depends_on:
       elasticsearch: 
         condition: service_healthy
-  
+
+  spark-submit:
+    image: docker.io/bitnami/spark:2.4.5
+    container_name: spark-submit
+    networks:
+      - hdfs_spark_elas
+    volumes:
+      - ./shared-workspace:/opt/workspace
+      - ./hdfs:/hdfs
+    command: spark-submit --driver-memory 4g --jars /opt/workspace/elasticsearch-spark-20_2.11-7.6.2.jar /opt/workspace/etl.py
+    depends_on:
+      - elasticsearch
+      - spark-master
+      - spark-worker-1
+
 volumes:
   data01:
     name: "data01"
