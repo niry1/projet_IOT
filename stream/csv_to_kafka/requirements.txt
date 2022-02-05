@@ -1,2 +1,7 @@
 kafka
 pandas
+# confluent_kafka[avro]
+# ccloud_lib
+requests
+certifi
+confluent-kafka[avro,json,protobuf]>=1.4.2

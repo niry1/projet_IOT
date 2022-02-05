@@ -127,6 +127,11 @@ services:
       - zookeeper
     networks:
       - hdfs_spark_elas
+    healthcheck:
+      test: kafka-topics.sh --list --bootstrap-server localhost:9092
+      interval: 5s
+      timeout: 10s
+      retries: 6 
 
   csv_to_kafka:
     build: ./stream/csv_to_kafka
@@ -134,7 +139,8 @@ services:
     networks: 
       - hdfs_spark_elas
     depends_on:
-      - kafka
+      kafka: 
+        condition: service_healthy
 
 volumes:
   data01:
