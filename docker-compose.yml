@@ -1,0 +1,97 @@
+version: "3.6"
+
+services:
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.17.0
+    container_name: elasticsearch
+    environment:
+      - discovery.type=single-node
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - data01:/usr/share/elasticsearch/data
+    ports:
+      - 9200:9200
+      - 9300:9300
+    networks:
+      - hdfs_spark_elas
+    healthcheck:
+      test: curl http://localhost:9200
+      interval: 5s
+      timeout: 10s
+      retries: 6 
+  
+  elastic_init:
+    build: ./elasticsearch
+    container_name: elastic_init
+    networks:
+      - hdfs_spark_elas
+    depends_on:
+      elasticsearch: 
+        condition: service_healthy
+    environment:
+      - ELASTICSEARCH_HOST=elasticsearch
+      - ELASTICSEARCH_PORT=9200
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:7.17.0
+    container_name: kibana
+    environment:
+      ELASTICSEARCH_HOSTS: '["http://elasticsearch:9200"]'
+    ports:
+      - 5601:5601
+    networks:
+      - hdfs_spark_elas
+    depends_on:
+      elasticsearch: 
+        condition: service_healthy
+
+  spark-master:
+    image: docker.io/bitnami/spark:2.4.5
+    container_name: spark-master
+    ports:
+      - 8080:8080
+      - 7077:7077
+    networks:
+      - hdfs_spark_elas
+    volumes:
+      - ./shared-workspace:/opt/workspace
+      - ./hdfs:/hdfs
+    environment:
+      - SPARK_MODE=master
+    command: bash -c "/opt/bitnami/scripts/spark/run.sh && spark-submit --driver-memory 4g --jars /opt/workspace/elasticsearch-spark-20_2.11-7.6.2.jar /opt/workspace/etl.py"
+    depends_on:
+      elasticsearch: 
+        condition: service_healthy
+
+  spark-worker-1:
+    image: docker.io/bitnami/spark:2.4.5
+    container_name: spark-worker-1
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_CORES=1
+      - SPARK_WORKER_MEMORY=512m
+    ports:
+      - 8081:8081
+    networks:
+      - hdfs_spark_elas
+    volumes:
+      - ./shared-workspace:/opt/workspace
+      - ./hdfs:/hdfs
+    depends_on:
+      elasticsearch: 
+        condition: service_healthy
+  
+volumes:
+  data01:
+    name: "data01"
+    driver: local
+
+networks:
+  hdfs_spark_elas:
+    driver: bridge
+    name : hdfs_spark_elas
