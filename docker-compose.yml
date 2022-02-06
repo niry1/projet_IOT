@@ -1,0 +1,173 @@
+version: "3.6"
+
+services:
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.17.0
+    container_name: elasticsearch
+    environment:
+      - discovery.type=single-node
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - data01:/usr/share/elasticsearch/data
+    ports:
+      - 9200:9200
+      - 9300:9300
+    networks:
+      - hdfs_spark_elas
+    healthcheck:
+      test: curl http://localhost:9200
+      interval: 5s
+      timeout: 10s
+      retries: 6 
+  
+  elastic_init:
+    build: ./batch/elasticsearch
+    container_name: elastic_init
+    networks:
+      - hdfs_spark_elas
+    depends_on:
+      elasticsearch: 
+        condition: service_healthy
+    environment:
+      - ELASTICSEARCH_HOST=elasticsearch
+      - ELASTICSEARCH_PORT=9200
+      - ELASTICSEARCH_INDEX=metrics_jems_batch
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:7.17.0
+    container_name: kibana
+    environment:
+      ELASTICSEARCH_HOSTS: '["http://elasticsearch:9200"]'
+    ports:
+      - 5601:5601
+    networks:
+      - hdfs_spark_elas
+    depends_on:
+      elasticsearch: 
+        condition: service_healthy
+
+  spark-master:
+    image: docker.io/bitnami/spark:2.4.5
+    container_name: spark-master
+    ports:
+      - 8080:8080
+      - 7077:7077
+    networks:
+      - hdfs_spark_elas
+    volumes:
+      - ./batch/shared-workspace:/opt/workspace
+      - ./batch/hdfs:/hdfs
+    environment:
+      - SPARK_MODE=master
+    command: bash -c "/opt/bitnami/scripts/spark/run.sh && spark-submit --driver-memory 4g --jars /opt/workspace/elasticsearch-spark-20_2.11-7.6.2.jar /opt/workspace/etl.py"
+    depends_on:
+      elasticsearch: 
+        condition: service_healthy
+
+  spark-worker-1:
+    image: docker.io/bitnami/spark:2.4.5
+    container_name: spark-worker-1
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_CORES=1
+      - SPARK_WORKER_MEMORY=512m
+    ports:
+      - 8081:8081
+    networks:
+      - hdfs_spark_elas
+    volumes:
+      - ./batch/shared-workspace:/opt/workspace
+      - ./batch/hdfs:/hdfs
+    depends_on:
+      elasticsearch: 
+        condition: service_healthy
+
+  spark-submit:
+    image: docker.io/bitnami/spark:2.4.5
+    container_name: spark-submit
+    networks:
+      - hdfs_spark_elas
+    volumes:
+      - ./batch/shared-workspace:/opt/workspace
+      - ./batch/hdfs:/hdfs
+    command: spark-submit --driver-memory 4g --jars /opt/workspace/elasticsearch-spark-20_2.11-7.6.2.jar /opt/workspace/etl.py
+    depends_on:
+      - elasticsearch
+      - spark-master
+      - spark-worker-1
+  
+  spark-submit-streaming:
+    image: docker.io/bitnami/spark:2.4.5
+    container_name: spark-submit-streaming
+    networks:
+      - hdfs_spark_elas
+    volumes:
+      - ./stream/spark:/opt/workspace
+    # command: spark-submit --driver-memory 4g --jars /opt/workspace/elasticsearch-spark-20_2.11-7.6.2.jar /opt/workspace/etl.py
+    depends_on:
+      - elasticsearch
+      - spark-master
+      - spark-worker-1
+
+  zookeeper:
+    image: docker.io/bitnami/zookeeper:3.7
+    container_name: zookeeper
+    ports:
+      - "2181:2181"
+    volumes:
+      - "zookeeper_data:/bitnami"
+    environment:
+      - ALLOW_ANONYMOUS_LOGIN=yes
+    networks:
+      - hdfs_spark_elas
+
+  kafka:
+    image: docker.io/bitnami/kafka:3
+    container_name: kafka
+    ports:
+      - "9092:9092"
+    volumes:
+      - "kafka_data:/bitnami"
+    environment:
+      - KAFKA_CFG_ZOOKEEPER_CONNECT=zookeeper:2181
+      - ALLOW_PLAINTEXT_LISTENER=yes
+      - KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE=true
+    depends_on:
+      - zookeeper
+    networks:
+      - hdfs_spark_elas
+    healthcheck:
+      test: kafka-topics.sh --list --bootstrap-server localhost:9092
+      interval: 5s
+      timeout: 10s
+      retries: 6 
+
+  csv_to_kafka:
+    build: ./stream/csv_to_kafka
+    container_name: csv_to_kafka
+    networks: 
+      - hdfs_spark_elas
+    depends_on:
+      kafka: 
+        condition: service_healthy
+
+volumes:
+  data01:
+    name: "data01"
+    driver: local
+  zookeeper_data:
+    name : "zookeeper_data"
+    driver: local
+  kafka_data:
+    name : "kafka_data"
+    driver: local
+
+networks:
+  hdfs_spark_elas:
+    driver: bridge
+    name : hdfs_spark_elas
