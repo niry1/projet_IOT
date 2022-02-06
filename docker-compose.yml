@@ -35,6 +35,7 @@ services:
     environment:
       - ELASTICSEARCH_HOST=elasticsearch
       - ELASTICSEARCH_PORT=9200
+      - ELASTICSEARCH_INDEX=metrics_jems_batch
 
   kibana:
     image: docker.elastic.co/kibana/kibana:7.17.0
@@ -95,6 +96,19 @@ services:
       - ./batch/shared-workspace:/opt/workspace
       - ./batch/hdfs:/hdfs
     command: spark-submit --driver-memory 4g --jars /opt/workspace/elasticsearch-spark-20_2.11-7.6.2.jar /opt/workspace/etl.py
+    depends_on:
+      - elasticsearch
+      - spark-master
+      - spark-worker-1
+  
+  spark-submit-streaming:
+    image: docker.io/bitnami/spark:2.4.5
+    container_name: spark-submit-streaming
+    networks:
+      - hdfs_spark_elas
+    volumes:
+      - ./stream/spark:/opt/workspace
+    # command: spark-submit --driver-memory 4g --jars /opt/workspace/elasticsearch-spark-20_2.11-7.6.2.jar /opt/workspace/etl.py
     depends_on:
       - elasticsearch
       - spark-master

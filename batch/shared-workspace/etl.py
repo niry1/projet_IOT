@@ -8,8 +8,8 @@ spark = SparkSession.\
         config("spark.executor.memory", "512m").\
         getOrCreate()
 
-data = spark.read.csv(path="/hdfs/X46789_2018-01-19T05-37-42.612Z.csv", sep=";", header=True)
+data = spark.read.csv(path="/hdfs", sep=";", header=True)
 
 data = data.withColumn("dateHour",to_timestamp("dateHour"))
 
-data.write.format("es").option("es.nodes.wan.only","true").option("es.nodes","elasticsearch").save("metrics_jems")
+data.write.format("es").option("es.nodes.wan.only","true").option("es.nodes","elasticsearch").save("metrics_jems_batch")

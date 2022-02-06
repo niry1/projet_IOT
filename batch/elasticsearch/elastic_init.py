@@ -55,4 +55,4 @@ metrics_jems_json = {
     }
 }
 
-res = es.indices.create(index="metrics_jems", body=metrics_jems_json)
+res = es.indices.create(index=getenv("ELASTICSEARCH_INDEX"), body=metrics_jems_json)
